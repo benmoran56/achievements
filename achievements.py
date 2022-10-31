@@ -1,9 +1,10 @@
+from time import time as _time
 from types import MethodType as _MethodType
 from weakref import ref as _ref
 from weakref import WeakMethod as _WeakMethod
 
 
-__version__ = '0.3'
+__version__ = '0.4'
 
 
 event_registry: dict = {}
@@ -70,54 +71,81 @@ def remove_handler(name: str, func) -> None:
 class Achievement:
     """Base Achievement class"""
 
-    def __init__(self, uid: int, name: str, caption: str = "", maximum: int = 1):
-        """Create a new Achievement object.
-
-        At a minimum, Achievements must have a unique ID and name.
-        You can optionally provide a sub caption (description).
+    def __init__(self, uid: int, name: str, title: str, caption: str):
+        """Create a new boolean Achievement object.
         """
         assert uid not in _achivement_ids
         _achivement_ids.append(uid)
 
         self.id = uid
         self.name = name
+
+        self.title = title
         self.caption = caption
 
-        self._maximum = maximum
-
         self._achieved = False
-        self._value = 0
 
     @property
     def achieved(self):
         return self._achieved
 
+    def set_achieved(self):
+        if not self._achieved:
+            dispatch_event('on_achieved', self)
+        self._achieved = True
+
+    def __del__(self):
+        _achivement_ids.remove(self.id)
+
+
+class IncrementalAchievement(Achievement):
+
+    def __init__(self, uid: int, name: str, title: str, caption: str, goal: int = 1):
+        """Create a new incremental Achievement object.
+        """
+        super().__init__(uid, name, title, caption)
+
+        self._goal = goal
+        self._current_value = 0.0
+
+        self._achieved = False
+
     @property
-    def maximum(self):
-        return self._maximum
+    def percentage(self):
+        return 100 * self._current_value / self._goal
 
     @property
     def value(self):
-        return self._value
+        return self._current_value
 
     def increment(self, value):
         if self._achieved:
             return
 
-        self._value = max(self._maximum, self._value + value)
-        dispatch_event('on_change', self._value)
+        self._current_value += value
+        dispatch_event('on_increment', self._current_value)
 
-        if self._value == self._achieved:
-            dispatch_event('on_achieved')
+        if self._current_value >= self._goal:
+            self._current_value = self._goal
+            self.set_achieved()
 
-    def reset(self):
-        self._achieved = False
-        self._value = 0
 
-    def set_achieved(self):
-        if not self._achieved:
-            dispatch_event('on_achieved')
-        self._achieved = True
+class TimeBasedAchievement(Achievement):
 
-    def __del__(self):
-        _achivement_ids.remove(self.id)
+    def __init__(self, uid: int, name: str, title: str, caption: str, rate: float):
+        """Create a new time-based Achievement object.
+        """
+        super().__init__(uid, name, title, caption)
+        self._rate = rate
+
+        self._last_tick = _time()
+
+    def tick(self):
+        if self._achieved:
+            return
+
+        current_time = _time()
+        if current_time - self._last_tick <= self._rate:
+            self.set_achieved()
+
+        self._last_tick = current_time
